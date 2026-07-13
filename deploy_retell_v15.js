@@ -112,7 +112,8 @@ const tools = [
   console.log('Patching agent turn-taking settings...');
   const a = await retellRequest('PATCH', '/update-agent/' + AGENT_ID, {
     interruption_sensitivity: 0.75,  // v54 value; agent yields when the caller talks
-    responsiveness: 1                // v54 default; snappy responses
+    responsiveness: 1,               // v54 default; snappy responses
+    ambient_sound: null              // no background track — cleaner transcription, less to echo
   });
   console.log('Agent PATCH status:', a.status);
   if (a.status !== 200) console.log('Agent error:', a.body.substring(0, 600));
