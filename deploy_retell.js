@@ -12,7 +12,7 @@ const cfg = JSON.parse(fs.readFileSync(path.join(__dirname, 'clients', client, '
 // Example locality in the address tool description — use the client's own service area,
 // not another client's city (the model is primed by this example).
 const exampleCity = (cfg.serviceCities && cfg.serviceCities[0])
-  ? cfg.serviceCities[0].replace(/w/g, c => c.toUpperCase())
+  ? cfg.serviceCities[0].replace(/\b\w/g, c => c.toUpperCase())
   : 'Springfield';
 
 // Credentials come from env, not source. Run with:
@@ -29,7 +29,13 @@ if (!RETELL_KEY || !TOOL_SECRET) {
 // Tool calls hit the authenticated secret path, not the bare worker root.
 const WORKER_URL = cfg.baseUrl + '/t/' + TOOL_SECRET;
 
-const prompt = fs.readFileSync('C:\\Users\\hbrks\\OneDrive\\Desktop\\Receptionist\\vapi_live_prompt_v15.txt', 'utf8')
+// The client's RENDERED prompt — never another client's. Run `node render.js <client>` first.
+const promptPath = path.join(__dirname, 'clients', client, 'dist', 'prompt.txt');
+if (!fs.existsSync(promptPath)) {
+  console.error('Missing ' + promptPath + ' — run `node render.js ' + client + '` first.');
+  process.exit(1);
+}
+const prompt = fs.readFileSync(promptPath, 'utf8')
   .replace(/\{\{customer\.number\}\}/g, '{{from_number}}');
 
 function retellRequest(method, path, body) {

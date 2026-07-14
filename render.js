@@ -56,4 +56,18 @@ for (const f of ['prompt.txt', 'worker/src/index.js', 'worker/wrangler.toml']) {
   if (m) leftovers.push(f + ': ' + [...new Set(m)].join(','));
 }
 if (leftovers.length) { console.error('UNFILLED TOKENS:\n' + leftovers.join('\n')); process.exit(2); }
+
+// Placeholder guard: an un-provisioned (TODO) config must never flow into a deploy.
+// Files are still written so the prompt/worker can be REVIEWED at the config gate,
+// but the non-zero exit halts any `render && deploy` chain.
+const todos = Object.entries(cfg)
+  .filter(([, v]) => typeof v === 'string' && /TODO/i.test(v))
+  .map(([k]) => k);
+if (todos.length) {
+  console.error('\n⚠️  REVIEW ONLY — NOT DEPLOYABLE. Un-provisioned placeholders in config:');
+  console.error('    ' + todos.join(', '));
+  console.error('    Written to ' + path.relative(root, outDir) + ' for review.');
+  console.error('    Fill these in (provisioning gate) before deploying.\n');
+  process.exit(3);
+}
 console.log('rendered ' + client + ' -> ' + path.relative(root, outDir));
