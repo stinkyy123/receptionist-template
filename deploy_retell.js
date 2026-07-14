@@ -9,6 +9,11 @@ const path = require('path');
 const client = process.argv[2];
 if (!client) { console.error('usage: node deploy_retell.js <client>'); process.exit(1); }
 const cfg = JSON.parse(fs.readFileSync(path.join(__dirname, 'clients', client, 'config.json'), 'utf8'));
+// Example locality in the address tool description — use the client's own service area,
+// not another client's city (the model is primed by this example).
+const exampleCity = (cfg.serviceCities && cfg.serviceCities[0])
+  ? cfg.serviceCities[0].replace(/w/g, c => c.toUpperCase())
+  : 'Springfield';
 
 // Credentials come from env, not source. Run with:
 //   $env:RETELL_API_KEY='...'; $env:TOOL_SECRET='...'; node deploy_retell_v15.js
@@ -66,7 +71,7 @@ const tools = [
       name: { type: 'string', description: 'Customer full name (first + last)' },
       phone: { type: 'string', description: 'Customer callback phone in E.164. Use actual digits, never a placeholder.' },
       service: { type: 'string', description: 'Service description' },
-      address: { type: 'string', description: 'Full service address INCLUDING city/town (required), e.g. "213 Fox Run Drive, Lynchburg". Street alone is not enough.' },
+      address: { type: 'string', description: `Full service address INCLUDING city/town (required), e.g. "213 Fox Run Drive, ${exampleCity}". Street alone is not enough.` },
       addressConfirm: { type: 'string', description: 'What you heard the SECOND time you asked for the address, verbatim. The system auto-detects mishearings by comparing the two; you do NOT judge address uncertainty yourself.' },
       notes: { type: 'string', description: 'Special instructions or routing tags' },
       uncertainFields: { type: 'array', items: { type: 'string' },

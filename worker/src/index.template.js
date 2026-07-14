@@ -1,5 +1,5 @@
 // ============================================================================
-// BlueTap Receptionist Worker  (reliability layer)
+// @@brand@@ Receptionist Worker  (reliability layer)
 // Retell -> this Worker -> Google Calendar + Sheets (VA queue) + Twilio + USPS
 //
 // Design principle: the bot's job is to NOT break trust during the call.
@@ -46,7 +46,7 @@ export default {
     const url = new URL(request.url);
 
     if (request.method === "GET") {
-      return new Response("BlueTap Receptionist Worker running", { status: 200 });
+      return new Response("@@brand@@ Receptionist Worker running", { status: 200 });
     }
     if (request.method !== "POST") {
       return new Response("Method Not Allowed", { status: 405 });
