@@ -370,6 +370,14 @@ the reminder SMS (touch 2).
   The offset now derives from `BUSINESS.timezone`. For an Eastern client this is a **no-op**
   (verified: EDT offset −4 and 2 PM → 18:00Z, unchanged). The `eastern*` function names are
   **legacy** — they are timezone-generic now; don't be fooled by the names.
+  **DST is handled per booking date** (not "today"): `easternToUTC()` probes the *booking's*
+  date via `Intl` in the target zone. Proven in `tests/dst.test.js` — a Chicago client booking
+  either side of the Nov fall-back gets −5 then −6, so the same 2 PM maps to different UTC
+  (a static offset lookup would silently book an hour off). **Boundary:** the probe samples
+  **noon UTC** of the booking date, which for every US zone lands 2–8 AM local — same calendar
+  day, *after* the 2 AM switch — so business-hours bookings are always correct. A 00:00–02:00
+  local booking on a transition day (outside all business hours) and UTC+12-ish zones (where
+  noon UTC falls on the next local date) are the only theoretical gaps.
 - **Config-logic traps are checked, not prevented.** `validate-config.js` flags the two that bite:
   an `emergencyKeyword` that also names a normal service (that service becomes unbookable — the
   guardrail reroutes it), and a `highTicketKeyword` that matches a cheap job (the "$199 faucet
