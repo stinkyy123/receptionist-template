@@ -1,0 +1,36 @@
+{
+  "_note": "Demo fixture for the dashboard sales screen-share. Relative dates keep it evergreen: tools/preview-dashboard.js turns daysAgo/hour into real timestamps at render time (relative to now, or --now=YYYY-MM-DD). NOT used in production — the live worker reads the real Bookings sheet. status values match the worker's internal states; the dashboard maps them to plain words. after-hours = hour >=19 or a Sunday.",
+  "rows": [
+    { "daysAgo": 0,  "hour": 21, "name": "Marcus Bell",      "service": "Water heater repair",      "status": "pending",        "apptDays": 1,  "apptHour": 9 },
+    { "daysAgo": 1,  "hour": 20, "name": "Priya Nair",       "service": "Drain clear",              "status": "hard-confirmed", "apptDays": 1,  "apptHour": 14 },
+    { "daysAgo": 1,  "hour": 8,  "name": "Dave Kowalski",    "service": "Toilet repair",            "status": "hard-confirmed", "apptDays": 2,  "apptHour": 10 },
+    { "daysAgo": 2,  "hour": 22, "name": "Angela Ruiz",      "service": "Main line auger",          "status": "soft-confirmed", "apptDays": 3,  "apptHour": 8  },
+    { "daysAgo": 2,  "hour": 13, "name": "Tom Feeney",       "service": "Garbage disposal",         "status": "flagged",        "apptDays": 3,  "apptHour": 15 },
+    { "daysAgo": 3,  "hour": 19, "name": "Sandra Ellison",   "service": "Leak diagnosis",           "status": "hard-confirmed", "apptDays": 4,  "apptHour": 11 },
+    { "daysAgo": 4,  "hour": 10, "name": "Greg Patel",       "service": "Faucet replacement",       "status": "completed",      "apptDays": -1, "apptHour": 9  },
+    { "daysAgo": 5,  "hour": 21, "name": "Nadia Osei",       "service": "Drain clear",              "status": "hard-confirmed", "apptDays": -2, "apptHour": 16 },
+    { "daysAgo": 6,  "hour": 6,  "name": "Bill Turner",      "service": "Burst pipe",               "status": "emergency-flagged", "apptDays": 0, "apptHour": 6 },
+    { "daysAgo": 6,  "hour": 12, "name": "Rachel Kim",       "service": "Water heater replace",     "status": "completed",      "apptDays": -3, "apptHour": 10 },
+    { "daysAgo": 7,  "hour": 20, "name": "Hector Alvarez",   "service": "Toilet replace",           "status": "completed",      "apptDays": -4, "apptHour": 13 },
+    { "daysAgo": 8,  "hour": 9,  "name": "Megan Doyle",      "service": "Drain clear",              "status": "completed",      "apptDays": -5, "apptHour": 8  },
+    { "daysAgo": 9,  "hour": 22, "name": "Chris Vaughn",     "service": "Hydrojet",                 "status": "completed",      "apptDays": -6, "apptHour": 11 },
+    { "daysAgo": 10, "hour": 14, "name": "Lena Brooks",      "service": "Leak diagnosis",           "status": "cancelled",      "apptDays": -6, "apptHour": 15 },
+    { "daysAgo": 11, "hour": 18, "name": "Omar Haddad",      "service": "Garbage disposal",         "status": "completed",      "apptDays": -7, "apptHour": 9  },
+    { "daysAgo": 12, "hour": 21, "name": "Jasmine Cole",     "service": "Water heater repair",      "status": "completed",      "apptDays": -8, "apptHour": 14 },
+
+    { "daysAgo": 17, "hour": 20, "name": "Frank Delgado",    "service": "Main line auger",          "status": "completed",      "apptDays": -14, "apptHour": 10 },
+    { "daysAgo": 11, "hour": 5,  "name": "Ivan Petrov",      "service": "Sewage backup",            "status": "emergency-flagged", "apptDays": 0,   "apptHour": 5 },
+    { "daysAgo": 19, "hour": 11, "name": "Karen Whitfield",  "service": "Toilet repair",            "status": "completed",      "apptDays": -15, "apptHour": 12 },
+    { "daysAgo": 21, "hour": 22, "name": "Diego Marín",      "service": "Drain clear",              "status": "completed",      "apptDays": -17, "apptHour": 9  },
+    { "daysAgo": 22, "hour": 16, "name": "Paula Jennings",   "service": "Faucet replacement",       "status": "cancelled",      "apptDays": -18, "apptHour": 13 },
+    { "daysAgo": 24, "hour": 20, "name": "Nathan Poole",     "service": "Water heater replace",     "status": "completed",      "apptDays": -20, "apptHour": 11 },
+    { "daysAgo": 26, "hour": 8,  "name": "Yuki Tanaka",      "service": "Leak diagnosis",           "status": "completed",      "apptDays": -22, "apptHour": 8  },
+    { "daysAgo": 28, "hour": 21, "name": "Robert Sims",      "service": "Hydrojet",                 "status": "completed",      "apptDays": -24, "apptHour": 15 },
+    { "daysAgo": 30, "hour": 13, "name": "Elena Popov",      "service": "Toilet replace",           "status": "completed",      "apptDays": -25, "apptHour": 10 },
+    { "daysAgo": 32, "hour": 19, "name": "Marcus Bell",      "service": "Drain clear",              "status": "completed",      "apptDays": -28, "apptHour": 9  },
+    { "daysAgo": 35, "hour": 22, "name": "Grace O'Malley",   "service": "Garbage disposal",         "status": "completed",      "apptDays": -30, "apptHour": 14 },
+    { "daysAgo": 37, "hour": 10, "name": "Sam Whitaker",     "service": "Water heater repair",      "status": "completed",      "apptDays": -32, "apptHour": 12 },
+    { "daysAgo": 39, "hour": 9,  "name": "Bianca Ferraro",   "service": "Main line auger",          "status": "completed",      "apptDays": -34, "apptHour": 8  },
+    { "daysAgo": 41, "hour": 20, "name": "Curtis Long",      "service": "Toilet repair",            "status": "completed",      "apptDays": -36, "apptHour": 11 }
+  ]
+}

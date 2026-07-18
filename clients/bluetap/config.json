@@ -11,6 +11,7 @@
   "timezone": "America/New_York",
   "calendarId": "hbrks56@gmail.com",
   "meetingMin": 90,
+  "avgTicket": 425,
   "businessStartH": 7,
   "businessEndH": 19,
   "bufferMin": 30,

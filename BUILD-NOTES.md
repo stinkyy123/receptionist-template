@@ -420,6 +420,7 @@ Set on the Worker via `wrangler secret put <NAME>`:
 - `TWILIO_SID`, `TWILIO_AUTH_TOKEN` — SMS send AND inbound-signature verification. **Rotate the auth token in Twilio and on the Worker together**, or `/sms-reply` and `/sms-status` start returning 403 (they verify signatures with it).
 - `SMARTY_AUTH_ID`, `SMARTY_AUTH_TOKEN` — Smarty US Street API (the server-side "Secret Key", not the embedded key).
 - `TOOL_SECRET` — gates `/t/…` and **must match** the secret baked into the tool URLs by the deploy script. Change one → change both.
+- `DASHBOARD_SECRET` — gates the read-only client dashboard at `/d/…` (see §9). Generate one per client (`openssl rand -hex 24`); it's independent of `TOOL_SECRET`.
 
 The deploy script reads `RETELL_API_KEY`, `TOOL_SECRET`, and optional `RETELL_AGENT_ID`
 from the environment — never hardcode them.
@@ -431,3 +432,33 @@ email `bluetap-worker@civil-willow-490515-p4.iam.gserviceaccount.com` (GCP proje
 `.gitignore` excludes the two leaked-credential helper scripts (`patch_worker_url.js`,
 `worker/get_google_token.js`) and all legacy `*.json` dumps. **Never** commit secret
 values — this repo is public.
+
+---
+
+## 9. Client dashboard (`/d/<DASHBOARD_SECRET>`)
+
+A read-only, client-facing dashboard the owner opens from their phone. **Additive** — a new
+GET branch in the router + new functions; it touches none of the booking / state-machine /
+tool logic. **It never writes.**
+
+- **Auth:** same secret-path pattern as `/t/`. `GET /d/<DASHBOARD_SECRET>` (constant-time compare);
+  wrong/absent secret → 401. The secret is a Worker secret (`wrangler secret put DASHBOARD_SECRET`),
+  never in the committed config.
+- **What it shows (outcomes only, never mechanics):** revenue captured this month
+  (confirmed+completed jobs × `BUSINESS.avgTicket`), calls handled + jobs booked (week/month with a
+  same-portion trend), after-hours saves, emergencies escalated, and a recent-bookings list. Windows
+  are keyed on the **call date** (row timestamp) in `BUSINESS.timezone`.
+- **`dashHumanStatus` is the only place internal states become words** (hard/soft-confirmed →
+  "Confirmed", completed → "Completed", flagged/pending → "Being confirmed", cancelled → "Cancelled").
+  Unknown status → "Being confirmed" so a raw internal name can never leak. The page renders **no**
+  status codes, flags, tiers, addresses, notes, or VA-queue terms. Adding a stat? Keep this invariant.
+- **`avgTicket`** is a new `BUSINESS`/config field (dashboard revenue only — not used by booking/voice).
+- **Cache:** the sheet READ is cached ~5 min per isolate (`_dashRows`); stats + HTML recompute each
+  request so the windows stay live. The page also self-refreshes every 5 min (`<meta refresh>`).
+- **`computeDashboardStats` + `renderDashboardHtml` are pure and exported** so the local preview runs
+  the exact same code (no drift). Preview + demo:
+  `node render.js <client> && node tools/preview-dashboard.js <client> [--now=YYYY-MM-DD]`
+  → writes `clients/<client>/dist/dashboard-preview.html`. Seed fixture: `clients/<client>/demo-bookings.json`
+  (relative-dated so it stays evergreen; **not** production data — the live worker reads the real sheet).
+- **Deploy = worker-only** (§2d): `wrangler secret put DASHBOARD_SECRET` then `wrangler deploy`. No
+  Retell push/publish/re-pin. Deliver the `/d/<secret>` link to the owner at handover.

@@ -8,7 +8,9 @@ crons = ["*/5 * * * *"]
 
 # Non-secret config. Set SHEETS_ID to the VA-queue spreadsheet id.
 # Secrets (set via `wrangler secret put`): GOOGLE_SERVICE_ACCOUNT, TWILIO_SID,
-# TWILIO_AUTH_TOKEN, SMARTY_AUTH_ID, SMARTY_AUTH_TOKEN, TOOL_SECRET
+# TWILIO_AUTH_TOKEN, SMARTY_AUTH_ID, SMARTY_AUTH_TOKEN, TOOL_SECRET, DASHBOARD_SECRET
 # TOOL_SECRET gates the /t/<secret> tool endpoint; Retell tool URLs must carry it.
+# DASHBOARD_SECRET gates the read-only client dashboard at /d/<secret>. Generate one
+# per client (e.g. `openssl rand -hex 24`) and deliver the /d/<secret> link at handover.
 [vars]
 SHEETS_ID = "@@sheetsId@@"

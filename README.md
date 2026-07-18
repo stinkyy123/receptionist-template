@@ -79,5 +79,19 @@ Real client configs are **gitignored** (they contain client PII) — only the bl
 and the schema are committed. This repo is public: **never commit secrets** (BUILD-NOTES §8;
 secrets are set on the worker via `wrangler secret put`).
 
+## Client dashboard (`/d/<DASHBOARD_SECRET>`)
+A read-only, mobile-first page the owner opens from their phone: revenue their receptionist
+captured this month, calls/jobs with trend, after-hours saves, emergencies, and recent bookings —
+**outcomes only, never internal mechanics**. Served by the worker itself (additive route; it never
+writes). Set a per-client secret with `wrangler secret put DASHBOARD_SECRET` and hand over the
+`/d/<secret>` link. See BUILD-NOTES §9.
+
+Preview it locally (also the sales-demo asset):
+```bash
+node render.js <client>
+node tools/preview-dashboard.js <client> [--now=YYYY-MM-DD]   # -> clients/<client>/dist/dashboard-preview.html
+```
+`avgTicket` (config) drives the revenue figure; `clients/<client>/demo-bookings.json` seeds the demo.
+
 Driven end-to-end by the `build-agent` in the
 [agentic-workflow](https://github.com/stinkyy123/agentic-workflow) repo.

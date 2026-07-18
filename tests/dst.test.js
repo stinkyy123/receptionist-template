@@ -7,6 +7,7 @@ function loadWorker(file, tzOverride) {
   const es = src.indexOf('export default {');
   const ee = src.indexOf('\n};', es) + 3;
   src = src.slice(0, es) + src.slice(ee);
+  src = src.replace(/\bexport\s+(?=const |function |async |class )/g, '');   // named exports -> plain decls for eval
   const m = eval(src + '\n;({BUSINESS, easternOffset, easternToUTC})');
   if (tzOverride) m.BUSINESS.timezone = tzOverride;   // reuse the same code under another tz
   return m;

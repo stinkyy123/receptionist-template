@@ -20,6 +20,7 @@ const BUSINESS = {
   calendarId: "@@calendarId@@",
   timezone: "@@timezone@@",
   meetingMin: @@meetingMin@@,
+  avgTicket: @@avgTicket@@,          // avg job value ($); dashboard revenue only — not used by booking/voice logic
   businessStartH: @@businessStartH@@,
   businessEndH: @@businessEndH@@,
   bufferMin: @@bufferMin@@,
@@ -51,6 +52,15 @@ export default {
     const url = new URL(request.url);
 
     if (request.method === "GET") {
+      // --- Client dashboard: authenticated secret path /d/<DASHBOARD_SECRET> ---
+      // Read-only. Never writes. Serves an HTML page of outcomes (revenue, bookings).
+      if (url.pathname.startsWith("/d/")) {
+        const provided = url.pathname.slice(3);
+        if (!env.DASHBOARD_SECRET || !timingSafeEqual(provided, env.DASHBOARD_SECRET)) {
+          return new Response("Unauthorized", { status: 401 });
+        }
+        return handleDashboard(env, ctx);
+      }
       return new Response("@@brand@@ Receptionist Worker running", { status: 200 });
     }
     if (request.method !== "POST") {
@@ -734,7 +744,7 @@ async function createCalendarEvent(b, addressForRecords, env, token, confirmTier
 }
 
 // ===== Bookings row column map (0-based within A..X) =====
-const COL = {
+export const COL = {
   timestamp:0, bookingId:1, callId:2, name:3, phone:4, service:5, rawAddress:6,
   stdAddress:7, addressStatus:8, requestedDateTime:9, startIso:10, calendarEventId:11,
   status:12, flagged:13, flagReasons:14, smsSentAt:15, smsReplyAt:16, smsReplyText:17,
@@ -1356,4 +1366,359 @@ async function sendSms(to, body, env, statusCallback) {
   }
   const data = await resp.json();
   return data.sid || "";
+}
+
+// ============================================================================
+// CLIENT DASHBOARD  (ADDITIVE — read-only; never writes; outcomes only)
+//
+// Route: GET /d/<DASHBOARD_SECRET>. Reuses getGoogleToken, sheetsGetAll, COL,
+// timingSafeEqual and BUSINESS. NOTHING in the booking / state-machine / tool /
+// SMS logic above is touched by anything below. `computeDashboardStats` and
+// `renderDashboardHtml` are pure and exported so a local preview runs the exact
+// same code on seed data (no drift between preview and production).
+// ============================================================================
+
+// Cache the sheet READ only (the API-expensive part); stats + HTML are recomputed
+// every request so "this week / this month" stay live. Per-isolate, best-effort.
+let _dashRows = { rows: null, at: 0 };
+const DASH_TTL_MS = 5 * 60 * 1000;
+
+async function dashLoadRows(env) {
+  const now = Date.now();
+  if (_dashRows.rows && (now - _dashRows.at) < DASH_TTL_MS) return _dashRows.rows;
+  const token = await getGoogleToken(env);
+  const rows = await sheetsGetAll(env, token);   // A2:X positional arrays
+  _dashRows = { rows, at: now };
+  return rows;
+}
+
+async function handleDashboard(env, ctx) {
+  let rows;
+  try {
+    rows = await dashLoadRows(env);
+  } catch (e) {
+    return new Response(renderDashboardUnavailable(BUSINESS), {
+      status: 200,
+      headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" }
+    });
+  }
+  const stats = computeDashboardStats(rows, BUSINESS, BUSINESS.avgTicket, Date.now());
+  return new Response(renderDashboardHtml(stats, BUSINESS), {
+    status: 200,
+    headers: { "content-type": "text/html; charset=utf-8", "cache-control": "private, max-age=60" }
+  });
+}
+
+// --- Outcome-only status map. The ONLY place internal states become words.
+// Unknown/any other state -> "Being confirmed" so a raw internal name can never leak.
+function dashHumanStatus(s) {
+  switch (String(s || "").toLowerCase()) {
+    case "hard-confirmed":
+    case "soft-confirmed": return "Confirmed";
+    case "completed":      return "Completed";
+    case "cancelled":      return "Cancelled";
+    case "flagged":
+    case "pending":        return "Being confirmed";
+    default:               return "Being confirmed";
+  }
+}
+
+const DASH_CONFIRMED = new Set(["hard-confirmed", "soft-confirmed", "completed"]);
+const DASH_WD = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+
+// PURE. rows = positional arrays (A2:X). Windows keyed on the call date (row
+// timestamp) in biz.timezone. Never returns any internal status string.
+export function computeDashboardStats(rows, biz, avgTicket, nowMs) {
+  const tz = biz.timezone;
+  const localParts = (ms) => {
+    const p = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit",
+      weekday: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23"
+    }).formatToParts(new Date(ms));
+    const g = (t) => p.find((x) => x.type === t)?.value;
+    return { y: +g("year"), m: +g("month"), d: +g("day"), wd: g("weekday"), H: +g("hour") };
+  };
+  const dayNum = (y, m, d) => Math.floor(Date.UTC(y, m - 1, d) / 86400000);
+  const monthOrd = (y, m) => y * 12 + (m - 1);
+
+  const afterHours = (p) => {
+    const sch = biz.schedule;
+    if (!sch || !sch.days) return p.H < biz.businessStartH || p.H >= biz.businessEndH;
+    const day = sch.days[["sun", "mon", "tue", "wed", "thu", "fri", "sat"][DASH_WD[p.wd]]];
+    if (!day) return true;                       // closed day => the call came in after hours
+    return p.H < day.open || p.H >= day.close;
+  };
+
+  const nowP = localParts(nowMs);
+  const nowDay = dayNum(nowP.y, nowP.m, nowP.d);
+  const weekStart = nowDay - ((DASH_WD[nowP.wd] + 6) % 7);   // Monday of the current week
+  const daysIntoWeek = nowDay - weekStart;                   // 0=Mon .. 6=Sun
+  const lastWeekTDend = weekStart - 7 + daysIntoWeek;        // last week THROUGH the same weekday
+  const nowMonth = monthOrd(nowP.y, nowP.m);
+
+  const s = {
+    businessName: biz.name, avgTicket: avgTicket || 0,
+    revenueMonth: 0, revenueCount: 0, revenueAfterHours: 0,
+    // "…ToDate" = last week through the same weekday, so a partial current week
+    // is compared apples-to-apples (never a partial week vs a full one).
+    callsWeek: 0, callsLastWeek: 0, callsLastWeekTD: 0, callsMonth: 0, callsLastMonth: 0,
+    jobsWeek: 0, jobsLastWeek: 0, jobsLastWeekTD: 0, jobsMonth: 0, jobsLastMonth: 0,
+    afterHoursSaves: 0, emergencies: 0, recent: []
+  };
+  const recent = [];
+
+  for (const r of rows || []) {
+    const tsRaw = r[COL.timestamp];
+    if (!tsRaw) continue;
+    const ms = Date.parse(tsRaw);
+    if (isNaN(ms)) continue;
+    const p = localParts(ms);
+    const day = dayNum(p.y, p.m, p.d);
+    const mo = monthOrd(p.y, p.m);
+    const status = String(r[COL.status] || "").toLowerCase();
+    const inWeek = day >= weekStart && day <= nowDay;
+    const inLastWeek = day >= weekStart - 7 && day < weekStart;
+    const inLastWeekTD = day >= weekStart - 7 && day <= lastWeekTDend;
+    const inMonth = mo === nowMonth;
+    const inLastMonth = mo === nowMonth - 1;
+    const confirmed = DASH_CONFIRMED.has(status);
+    const late = afterHours(p);
+
+    if (inWeek) s.callsWeek++;
+    if (inLastWeek) s.callsLastWeek++;
+    if (inLastWeekTD) s.callsLastWeekTD++;
+    if (inMonth) s.callsMonth++;
+    if (inLastMonth) s.callsLastMonth++;
+
+    if (confirmed) {
+      if (inWeek) s.jobsWeek++;
+      if (inLastWeek) s.jobsLastWeek++;
+      if (inLastWeekTD) s.jobsLastWeekTD++;
+      if (inMonth) s.jobsMonth++;
+      if (inLastMonth) s.jobsLastMonth++;
+      if (inMonth) {
+        s.revenueCount++;
+        if (late) { s.revenueAfterHours++; s.afterHoursSaves++; }
+      }
+    }
+    if (status === "emergency-flagged" && inMonth) s.emergencies++;
+
+    if (status !== "emergency-flagged" && status !== "rescheduled") {
+      recent.push({
+        ms, name: r[COL.name] || "", service: r[COL.service] || "",
+        startIso: r[COL.startIso] || "", requested: r[COL.requestedDateTime] || "",
+        statusLabel: dashHumanStatus(status)   // already outcome-only
+      });
+    }
+  }
+
+  s.revenueMonth = s.revenueCount * (avgTicket || 0);
+  recent.sort((a, b) => b.ms - a.ms);
+  s.recent = recent.slice(0, 8).map((x) => ({
+    name: x.name, service: x.service,
+    when: dashWhen(x.startIso, x.requested, tz), status: x.statusLabel
+  }));
+  return s;
+}
+
+function dashWhen(startIso, requested, tz) {
+  if (startIso) {
+    const d = new Date(startIso);
+    if (!isNaN(d.getTime())) {
+      const day = new Intl.DateTimeFormat("en-US", { timeZone: tz, weekday: "short", month: "short", day: "numeric" }).format(d);
+      const time = new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", minute: "2-digit", hour12: true }).format(d);
+      return day + " · " + time;
+    }
+  }
+  return requested || "—";
+}
+
+function dashEsc(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+function dashMoney(n) { return "$" + Math.round(Number(n) || 0).toLocaleString("en-US"); }
+function dashPlural(n, one, many) { return (n === 1 ? one : (many || one + "s")); }
+function dashTrend(cur, prev) {
+  if (!prev && !cur) return { cls: "flat", sym: "→", txt: "no change" };
+  if (!prev) return { cls: "up", sym: "▲", txt: "new" };
+  const pct = Math.round(((cur - prev) / prev) * 100);
+  if (pct > 0) return { cls: "up", sym: "▲", txt: "+" + pct + "% vs last week" };
+  if (pct < 0) return { cls: "down", sym: "▼", txt: pct + "% vs last week" };
+  return { cls: "flat", sym: "→", txt: "same as last week" };
+}
+function dashChipTone(label) {
+  if (label === "Confirmed") return "good";
+  if (label === "Completed") return "done";
+  if (label === "Cancelled") return "muted";
+  return "warn"; // Being confirmed
+}
+
+// PURE. Returns a single self-contained mobile-first HTML page (no external deps).
+export function renderDashboardHtml(stats, biz) {
+  const callsTrend = dashTrend(stats.callsWeek, stats.callsLastWeekTD);
+  const jobsTrend = dashTrend(stats.jobsWeek, stats.jobsLastWeekTD);
+  const monthName = new Intl.DateTimeFormat("en-US", { timeZone: biz.timezone, month: "long" }).format(new Date());
+
+  const rows = stats.recent.length ? stats.recent.map((b) => {
+    const tone = dashChipTone(b.status);
+    return `<li class="bk">
+        <div class="bk-main">
+          <span class="bk-name">${dashEsc(b.name || "Customer")}</span>
+          <span class="bk-svc">${dashEsc(b.service || "Service call")}</span>
+        </div>
+        <div class="bk-meta">
+          <span class="bk-when">${dashEsc(b.when)}</span>
+          <span class="chip chip-${tone}">${dashEsc(b.status)}</span>
+        </div>
+      </li>`;
+  }).join("") : `<li class="bk bk-empty">No bookings yet this period.</li>`;
+
+  const heroSub = stats.revenueCount === 0
+    ? `from bookings your receptionist captured`
+    : `<strong>${stats.revenueAfterHours}</strong> of these booked after hours`;
+
+  return `<!doctype html>
+<html lang="en" data-theme="auto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="refresh" content="300">
+<meta name="robots" content="noindex, nofollow">
+<title>${dashEsc(biz.name)} · Dashboard</title>
+<style>
+  :root{
+    --bg:#eaeef4; --surface:#ffffff; --surface-2:#f6f8fb; --ink:#0e1726; --muted:#5c6b82;
+    --line:#e2e8f0; --accent:#1f6feb; --money:#0a8a55;
+    --good:#0a8a55; --good-bg:#e4f4ec; --warn:#a4630a; --warn-bg:#fbf0dc;
+    --done:#1f6feb; --done-bg:#e7f0fe; --mut:#5c6b82; --mut-bg:#eceff4;
+    --shadow:0 1px 2px rgba(14,23,38,.04), 0 8px 24px rgba(14,23,38,.06);
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#080d16; --surface:#111a2b; --surface-2:#0d1523; --ink:#eaf0f8; --muted:#93a1b8;
+      --line:#1e2a40; --accent:#5b9dff; --money:#37cf87;
+      --good:#37cf87; --good-bg:#0f2a20; --warn:#e0a24a; --warn-bg:#2a2011;
+      --done:#5b9dff; --done-bg:#122238; --mut:#93a1b8; --mut-bg:#18233a;
+      --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 30px rgba(0,0,0,.35);
+    }
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    background:var(--bg); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased; line-height:1.45;
+    padding:max(16px,env(safe-area-inset-top)) 16px calc(28px + env(safe-area-inset-bottom));
+  }
+  .wrap{max-width:440px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+  .num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1}
+
+  header{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:4px 2px 2px}
+  .biz{font-size:13px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)}
+  .ctx{font-size:12px;color:var(--muted);white-space:nowrap}
+
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow)}
+
+  .hero{padding:22px 20px 20px;position:relative;overflow:hidden}
+  .hero .label{font-size:13px;color:var(--muted);font-weight:600;letter-spacing:.01em}
+  .hero .big{font-size:clamp(48px,17vw,68px);font-weight:800;letter-spacing:-.03em;color:var(--money);line-height:1.02;margin:6px 0 4px}
+  .hero .sub{font-size:14px;color:var(--muted)}
+  .hero .sub strong{color:var(--ink);font-variant-numeric:tabular-nums}
+
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .tile{padding:16px 16px 14px}
+  .tile .k{font-size:12.5px;color:var(--muted);font-weight:600}
+  .tile .v{font-size:34px;font-weight:800;letter-spacing:-.02em;margin:4px 0 2px;line-height:1}
+  .tile .wk{font-size:12.5px;color:var(--muted)}
+  .tile .wk b{color:var(--ink)}
+  .trend{display:inline-flex;align-items:center;gap:3px;font-weight:700;font-size:12px;margin-left:4px}
+  .trend.up{color:var(--good)} .trend.down{color:var(--warn)} .trend.flat{color:var(--muted)}
+
+  .mini{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .mini .tile{display:flex;flex-direction:column;gap:2px}
+  .mini .v{font-size:30px}
+
+  .sec-h{font-size:12.5px;font-weight:700;letter-spacing:.10em;text-transform:uppercase;color:var(--muted);padding:6px 4px 0}
+  ul.list{list-style:none;margin:0;padding:6px}
+  .bk{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 12px;border-radius:11px}
+  .bk + .bk{border-top:1px solid var(--line)}
+  .bk-main{min-width:0;display:flex;flex-direction:column;gap:1px}
+  .bk-name{font-weight:650;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .bk-svc{font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .bk-meta{display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex:none}
+  .bk-when{font-size:12px;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
+  .bk-empty{justify-content:center;color:var(--muted);font-size:14px;padding:18px}
+  .chip{font-size:11px;font-weight:700;letter-spacing:.02em;padding:3px 9px;border-radius:999px;white-space:nowrap}
+  .chip-good{color:var(--good);background:var(--good-bg)}
+  .chip-warn{color:var(--warn);background:var(--warn-bg)}
+  .chip-done{color:var(--done);background:var(--done-bg)}
+  .chip-muted{color:var(--mut);background:var(--mut-bg)}
+
+  footer{text-align:center;color:var(--muted);font-size:11.5px;padding:6px 0 0;letter-spacing:.02em}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <span class="biz">${dashEsc(biz.name)}</span>
+      <span class="ctx">${dashEsc(monthName)} · so far</span>
+    </header>
+
+    <section class="card hero" aria-label="Revenue captured this month">
+      <div class="label">Revenue your receptionist captured this month</div>
+      <div class="big num">${dashMoney(stats.revenueMonth)}</div>
+      <div class="sub">${heroSub}</div>
+    </section>
+
+    <div class="grid2">
+      <section class="card tile">
+        <div class="k">Calls handled</div>
+        <div class="v num">${stats.callsMonth}</div>
+        <div class="wk">This week <b class="num">${stats.callsWeek}</b>
+          <span class="trend ${callsTrend.cls}">${callsTrend.sym}</span></div>
+      </section>
+      <section class="card tile">
+        <div class="k">Jobs booked</div>
+        <div class="v num">${stats.jobsMonth}</div>
+        <div class="wk">This week <b class="num">${stats.jobsWeek}</b>
+          <span class="trend ${jobsTrend.cls}">${jobsTrend.sym}</span></div>
+      </section>
+    </div>
+
+    <div class="mini">
+      <section class="card tile">
+        <div class="k">After-hours saves</div>
+        <div class="v num">${stats.afterHoursSaves}</div>
+        <div class="wk">jobs booked while you were off the clock</div>
+      </section>
+      <section class="card tile">
+        <div class="k">Emergencies routed to you</div>
+        <div class="v num">${stats.emergencies}</div>
+        <div class="wk">sent straight to your phone</div>
+      </section>
+    </div>
+
+    <div>
+      <div class="sec-h">Recent bookings</div>
+      <section class="card">
+        <ul class="list">${rows}</ul>
+      </section>
+    </div>
+
+    <footer>Updates every few minutes · powered by your AI receptionist</footer>
+  </div>
+</body>
+</html>`;
+}
+
+function renderDashboardUnavailable(biz) {
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><meta http-equiv="refresh" content="60">
+<title>${dashEsc(biz.name)} · Dashboard</title>
+<style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
+background:#eaeef4;color:#5c6b82;font-family:-apple-system,"Segoe UI",Roboto,sans-serif;text-align:center;padding:24px}
+@media(prefers-color-scheme:dark){body{background:#080d16;color:#93a1b8}}
+.b{font-weight:700;color:#1f6feb;letter-spacing:.14em;text-transform:uppercase;font-size:13px;margin-bottom:10px}</style>
+</head><body><div><div class="b">${dashEsc(biz.name)}</div>
+Your dashboard is taking a moment to load. Check back shortly — this page refreshes on its own.</div></body></html>`;
 }

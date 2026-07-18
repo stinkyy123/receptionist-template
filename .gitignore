@@ -36,3 +36,4 @@ clients/*/dist/
 # Real client configs contain client PII and must NOT be pushed to a public repo.
 !schema/client-config.schema.json
 !clients/bluetap/config.json
+!clients/bluetap/demo-bookings.json

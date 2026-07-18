@@ -10,7 +10,7 @@
     "meetingMin", "businessStartH", "businessEndH", "bufferMin", "twilioFrom",
     "defaultState", "sheetTab", "baseUrl", "noReplyTimeoutMin", "reminderLeadHours",
     "highTicketKeywords", "emergencyKeywords", "serviceCities",
-    "emergencyScreenQuestion", "emergencyExamples", "schedule",
+    "emergencyScreenQuestion", "emergencyExamples", "schedule", "avgTicket",
     "sheetsId", "workerName", "retellLlmId", "retellAgentId", "prompt"
   ],
   "definitions": {
@@ -43,6 +43,7 @@
     "timezone": { "type": "string", "description": "IANA tz, e.g. 'America/New_York'." },
     "calendarId": { "type": "string", "description": "Google Calendar id the worker books into (client-owned)." },
     "meetingMin": { "type": "integer", "description": "Default appointment length in minutes." },
+    "avgTicket": { "type": "number", "description": "Average job value in dollars (from the discovery call's ROI numbers). Drives the dashboard's 'revenue captured' figure. Not used by the booking/voice logic." },
     "businessStartH": { "type": "integer", "minimum": 0, "maximum": 23 },
     "businessEndH": { "type": "integer", "minimum": 0, "maximum": 23 },
     "bufferMin": { "type": "integer", "description": "Buffer between jobs, minutes." },
