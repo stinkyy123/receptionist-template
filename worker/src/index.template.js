@@ -350,14 +350,39 @@ function normalizePhone(rawPhone, fallback = null) {
 // ============================================================================
 // SIMPLE SYNCHRONOUS TOOLS
 // ============================================================================
+// Returns EXACT weekday->date mappings so the model never has to compute a date
+// or weekday itself. Haiku got these wrong on live calls ("tomorrow is Sunday"
+// when today WAS Sunday; booked a Tuesday it called "Monday"). The model reads
+// today/tomorrow/upcoming verbatim; `open` comes from the client schedule so it
+// won't verbally offer a closed day. Reuses easternDateStr + hoursForDate, so it
+// stays timezone- and schedule-correct for any client.
 function handleGetDate() {
   const now = new Date();
-  const formatted = new Intl.DateTimeFormat("en-US", {
-    timeZone: BUSINESS.timezone,
-    weekday: "long", year: "numeric", month: "long", day: "numeric",
+  const tz = BUSINESS.timezone;
+  const weekdayOf = d => new Intl.DateTimeFormat("en-US", { timeZone: tz, weekday: "long" }).format(d);
+  const localTime = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz, weekday: "long", year: "numeric", month: "long", day: "numeric",
     hour: "numeric", minute: "2-digit", hour12: true
   }).format(now);
-  return { nowIso: now.toISOString(), localTime: formatted, timezone: BUSINESS.timezone };
+  // Anchor at noon UTC of today's business-local date, then step whole days
+  // (noon UTC never crosses a local midnight, so each date/weekday is exact).
+  const anchor = new Date(easternDateStr(now) + "T12:00:00Z");
+  const days = [];
+  for (let i = 0; i <= 8; i++) {
+    const d = new Date(anchor.getTime() + i * 86400000);
+    const date = easternDateStr(d);
+    days.push({
+      label: i === 0 ? "today" : i === 1 ? "tomorrow" : weekdayOf(d),
+      weekday: weekdayOf(d), date, open: !hoursForDate(date).closed
+    });
+  }
+  return {
+    nowIso: now.toISOString(), localTime, timezone: tz,
+    today: { weekday: days[0].weekday, date: days[0].date, open: days[0].open },
+    tomorrow: { weekday: days[1].weekday, date: days[1].date, open: days[1].open },
+    upcoming: days,   // 9 days incl. today; each has weekday, date (YYYY-MM-DD), open
+    closedNote: "Days with open:false take emergencies only — don't offer them for standard jobs."
+  };
 }
 
 async function handleCheckAvailability(params, env) {

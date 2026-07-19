@@ -362,6 +362,23 @@ the reminder SMS (touch 2).
   correctly refused, and the 4 PM same-day cutoff / 5 PM latest slot are now real. That is the
   intended fix, but it IS a production behavior change — deploy it through the normal gates.
   `minFee` / `minFeeWaivedWithRepair` remain prompt-text (they're quoting rules, not scheduling).
+- **✅ `getDate` returns exact weekday→date mappings (the model can't do date math).** On a live
+  call the LLM (Haiku) said *"tomorrow is Sunday"* when today WAS Sunday, and booked a Tuesday it
+  called "Monday" — schedule-enforcement blocks the wrong *booking* but not the wrong *spoken*
+  date. Fix: `handleGetDate` now returns `today` / `tomorrow` / `upcoming` (9 days, each with
+  `weekday`, `date` YYYY-MM-DD, and `open` from `hoursForDate`), and the prompt says read them
+  verbatim + only mention a closed-day/hours limit when the resolved day is actually `open:false`.
+  Reuses `easternDateStr` + `hoursForDate`, so it's timezone- and schedule-correct for any client.
+  NOTE: the WORKER half is deployed; the PROMPT half awaits a Retell push (see the LLM-wedge note
+  below) — but the enriched `getDate` output alone already stops the mis-statement, since the
+  model now receives `tomorrow:{weekday,date,open}` explicitly instead of computing it.
+- **⚠️ Retell LLM/agent can wedge into "published, no draft" — `update-retell-llm` then 400s
+  ("Cannot update published LLM") and `update-agent` 400s ("Cannot update published agent other
+  than version title").** Rapid/interleaved publishes (e.g. two sessions, or a failed deploy
+  racing a dashboard edit) can leave the head published with no editable draft, locking the API
+  out. **Un-wedge by making ANY edit in the Retell dashboard** (that forks a fresh draft); the API
+  works again after. The phone pin is unaffected — keep callers on the last good published version
+  (BlueTap: v75) until you can push.
 - **✅ Timezone is now client-driven (was hardcoded Eastern — a silent booking corruption).**
   `easternOffset()` used a hardcoded `"America/New_York"`, and `easternToUTC()` (which converts
   EVERY booking, availability check and cancellation) inherited it — while calendar events were

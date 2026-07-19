@@ -60,7 +60,7 @@ function customTool(name, description, props, required, speakDuring = false, spe
 
 const tools = [
   customTool('getDate',
-    'Get current date/time. Call ONLY when customer mentions relative dates like tomorrow or next week. Do NOT call at call start.',
+    'Resolve relative dates. Returns today, tomorrow, and an upcoming list where each day has its weekday, exact date (YYYY-MM-DD), and open flag. Read these values verbatim — never compute a weekday/date yourself. Call when the customer names any relative day (tomorrow, Monday, next week). Do NOT call at call start.',
     {}, []),
   customTool('checkAvailability',
     'Check if a time slot is available for booking. Call once BOTH date AND time are known.',
